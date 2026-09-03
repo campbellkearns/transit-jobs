@@ -18,7 +18,9 @@
     "db:push": "drizzle-kit push",
     "db:push:ci": "drizzle-kit push --force",
     "db:setup": "npm run db:extensions && npm run db:push",
-    "db:setup:ci": "npm run db:extensions && npm run db:push:ci"
+    "db:setup:ci": "npm run db:extensions && npm run db:push:ci",
+    "db:seed": "tsx scripts/db-seed.ts",
+    "gtfs:pin": "tsx scripts/pin-gtfs.ts"
   },
   "dependencies": {
     "bcryptjs": "3.0.3",
