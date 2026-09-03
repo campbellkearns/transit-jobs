@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  color: theme("colors.ink.primary");
+}
+
+*:focus-visible {
+  outline: theme("outlineWidth.DEFAULT") solid theme("colors.ink.primary");
+  outline-offset: 2px;
+}
