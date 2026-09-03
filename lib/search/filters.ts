@@ -170,41 +170,98 @@ const usdWhole = new Intl.NumberFormat("en-US", {
 })
 
 /**
- * Plain-language names for the filters actually in force.
- *
- * The no-match state has to say which filters produced the dead end (spec
- * art_9CmAgRnh, deliverable 5), so the naming lives beside the parsing rather
- * than being reassembled in the component — one list, one wording.
+ * One filter that is actually in force: what to call it, and the filter set
+ * that remains once it is dropped.
  */
-export function describeActiveFilters(filters: SearchFilters): string[] {
-  const described: string[] = []
-  if (filters.keyword) described.push(`the keyword “${filters.keyword}”`)
-  if (filters.category) described.push(`the ${filters.category} category`)
-  if (filters.experienceLevel) {
-    described.push(`${filters.experienceLevel} experience`)
+export type ActiveFilter = {
+  /** Stable identity for React keys. */
+  key: string
+  /** Plain-language name, e.g. “the GREEN line”. */
+  label: string
+  /** The same search with this one filter removed. */
+  without: SearchFilters
+}
+
+/**
+ * The filters actually in force, each with the search that drops it.
+ *
+ * The no-match state has to name the filters that produced the dead end and
+ * offer a way out of it (spec art_9CmAgRnh, deliverable 5). Naming and
+ * removal are the same list because they have to stay in step: a component
+ * that wrote its own copy would eventually describe a filter it cannot
+ * actually clear.
+ */
+export function activeFilters(filters: SearchFilters): ActiveFilter[] {
+  const active: ActiveFilter[] = []
+  const drop = (patch: Partial<SearchFilters>): SearchFilters => ({
+    ...filters,
+    ...patch,
+  })
+
+  if (filters.keyword) {
+    active.push({
+      key: "keyword",
+      label: `the keyword “${filters.keyword}”`,
+      without: drop({ keyword: "" }),
+    })
   }
-  if (filters.lines.length === 1) {
-    described.push(`the ${filters.lines[0]} line`)
-  } else if (filters.lines.length > 1) {
-    described.push(`the ${filters.lines.join(", ")} lines`)
+  if (filters.category) {
+    active.push({
+      key: "category",
+      label: `the ${filters.category} category`,
+      without: drop({ category: null }),
+    })
+  }
+  if (filters.experienceLevel) {
+    active.push({
+      key: "experience",
+      label: `${filters.experienceLevel} experience`,
+      without: drop({ experienceLevel: null }),
+    })
+  }
+  if (filters.lines.length > 0) {
+    active.push({
+      key: "lines",
+      label:
+        filters.lines.length === 1
+          ? `the ${filters.lines[0]} line`
+          : `the ${filters.lines.join(", ")} lines`,
+      without: drop({ lines: [] }),
+    })
   }
   if (filters.radiusMiles !== DEFAULT_RADIUS_MILES) {
-    described.push(`a ${filters.radiusMiles}-mile radius`)
+    active.push({
+      key: "radius",
+      label: `a ${filters.radiusMiles}-mile radius`,
+      without: drop({ radiusMiles: DEFAULT_RADIUS_MILES }),
+    })
   }
-  if (filters.salaryMin !== null && filters.salaryMax !== null) {
-    described.push(
-      `pay between ${usdWhole.format(filters.salaryMin)} and ${usdWhole.format(filters.salaryMax)}`,
-    )
-  } else if (filters.salaryMin !== null) {
-    described.push(`pay from ${usdWhole.format(filters.salaryMin)}`)
-  } else if (filters.salaryMax !== null) {
-    described.push(`pay up to ${usdWhole.format(filters.salaryMax)}`)
+  if (filters.salaryMin !== null || filters.salaryMax !== null) {
+    active.push({
+      key: "salary",
+      label: describeSalary(filters.salaryMin, filters.salaryMax),
+      without: drop({ salaryMin: null, salaryMax: null }),
+    })
   }
-  return described
+
+  return active
+}
+
+function describeSalary(min: number | null, max: number | null): string {
+  if (min !== null && max !== null) {
+    return `pay between ${usdWhole.format(min)} and ${usdWhole.format(max)}`
+  }
+  if (min !== null) return `pay from ${usdWhole.format(min)}`
+  return `pay up to ${usdWhole.format(max ?? 0)}`
+}
+
+/** Plain-language names for the filters actually in force. */
+export function describeActiveFilters(filters: SearchFilters): string[] {
+  return activeFilters(filters).map((filter) => filter.label)
 }
 
 export function hasActiveFilters(filters: SearchFilters): boolean {
-  return describeActiveFilters(filters).length > 0
+  return activeFilters(filters).length > 0
 }
 
 /** The next radius a seeker can widen to, or null at the maximum. */

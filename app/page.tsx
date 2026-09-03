@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 const LINES = [
   { name: "BLUE", className: "bg-line-blue" },
   { name: "GOLD", className: "bg-line-gold" },
@@ -16,9 +18,13 @@ export default function HomePage() {
       </h1>
       <p className="text-base text-ink-primary/80">
         Search Atlanta-area roles by rail line, station, and walk distance.
-        Scaffold in progress — search, employer, and detail pages ship in
-        follow-up PRs.
       </p>
+      <Link
+        href="/search"
+        className="rounded-md bg-ink-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-ink-primary/90"
+      >
+        Search jobs near MARTA rail
+      </Link>
       <ul className="flex flex-wrap gap-2" aria-label="MARTA rail lines">
         {LINES.map((line) => (
           <li
