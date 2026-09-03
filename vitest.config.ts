@@ -12,6 +12,13 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     include: ["test/**/*.test.{ts,tsx}"],
+    // Test files run one at a time. Three suites are backed by the same
+    // Postgres database and each truncates the shared tables it owns in
+    // `beforeAll` — run concurrently, one file's setup deletes another's
+    // fixtures mid-assertion. Serial execution is what makes those suites
+    // deterministic; the alternative (a schema or database per file) buys
+    // parallelism this suite is far too small to need.
+    fileParallelism: false,
     server: {
       // Force next-auth through Vite's own resolver instead of Node's
       // native ESM loader. Externalized (the SSR default for node_modules)

@@ -14,4 +14,12 @@ describe("HomePage", () => {
       expect(screen.getByText(line)).toBeInTheDocument()
     }
   })
+
+  it("sends the visitor to search", () => {
+    render(<HomePage />)
+
+    expect(
+      screen.getByRole("link", { name: /search jobs near marta rail/i })
+    ).toHaveAttribute("href", "/search")
+  })
 })
