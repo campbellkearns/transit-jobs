@@ -1,0 +1,154 @@
+# Quality gate for transit-jobs.
+#
+# GitHub Actions is unusable on this account (billing lock refuses to start
+# jobs), so the same gate runs here: two jobs (`ci/quality` for lint ->
+# typecheck -> vitest -> build, `ci/e2e` for the Playwright happy paths),
+# both on every branch push — which covers PR checks plus pushes to main and
+# release/**. `quality` mirrors the old .github/workflows/ci.yml exactly;
+# `e2e` is T9's release gate.
+#
+# Both jobs back onto one Postgres service container each. The auth
+# integration tests (real register/login/logout/role-authorization flows
+# against `db/schema.ts`'s `users` table) and the schema/seed tests
+# (geography round-trips, ON CONFLICT, check constraints, foreign-key
+# restriction) both refuse to skip when CI is set, so a missing database
+# fails the build rather than quietly reducing the gate. The E2E job seeds
+# the same deterministic content the happy-path specs assume (38 stations,
+# 24 published jobs). AUTH_SECRET is a fixed non-production value: it only
+# needs to be stable across the job's own Auth.js instances, never reused
+# outside CI.
+version: 2.1
+
+jobs:
+  quality:
+    docker:
+      - image: cimg/node:20.19.6
+        environment:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/transit_jobs_test
+          AUTH_SECRET: circleci-quality-gate-test-secret-do-not-reuse
+      # postgis/postgis rather than cimg/postgres: the schema tests need the
+      # PostGIS extension, which cimg/postgres does not ship. The image is a
+      # superset of stock Postgres, so the auth suite runs against it unchanged
+      # — one container serves both rather than either side losing its database.
+      - image: postgis/postgis:16-3.4
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transit_jobs_test
+    steps:
+      - checkout
+
+      # No dependency caches, deliberately: every stored cache archive counts
+      # against the CircleCI storage quota (project hit ~50% on 2026-09-03).
+      # The old node_modules archive was worse than useless — `npm ci`
+      # deletes node_modules at the start of every install, so the restored
+      # copy was pure quota. A full `npm ci` from the registry is ~1 minute
+      # slower and costs zero storage. The E2E job below carries the single
+      # sanctioned exception (Playwright browsers).
+      - run:
+          name: Install dependencies
+          command: npm ci
+
+      - run:
+          name: Wait for PostgreSQL
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 5432 && echo "postgres is up" && exit 0
+              sleep 2
+            done
+            echo "postgres did not become available" >&2
+            exit 1
+
+      - run:
+          name: Prepare test database
+          # Enables the PostGIS extension, then pushes the schema with --force:
+          # the CI database is disposable, and the prompt would otherwise hang.
+          command: npm run db:setup:ci
+
+      - run:
+          name: Lint
+          command: npm run lint
+
+      - run:
+          name: Typecheck
+          command: npm run typecheck
+
+      - run:
+          name: Unit, database and integration tests
+          command: npm run test
+
+      - run:
+          name: Build
+          command: npm run build
+
+  e2e:
+    docker:
+      - image: cimg/node:20.19.6
+        environment:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/transit_jobs_test
+          AUTH_SECRET: circleci-quality-gate-test-secret-do-not-reuse
+      - image: postgis/postgis:16-3.4
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transit_jobs_test
+    steps:
+      - checkout
+
+      - run:
+          name: Install dependencies
+          command: npm ci
+
+      # The one sanctioned cache (storage discipline, 2026-09-03): Playwright
+      # browser downloads are ~130 MiB and keyed on the exact browser build
+      # the pinned @playwright/test installs — resolved from
+      # playwright-core's browsers.json, not a per-run key. The bare prefix
+      # is a fallback restore so a build bump still hits something while the
+      # new archive is assembled. No node_modules or ~/.npm caches anywhere.
+      - run:
+          name: Resolve Playwright Chromium build
+          # playwright-core's `exports` map does not expose ./browsers.json
+          # (require('playwright-core/browsers.json') throws
+          # ERR_PACKAGE_PATH_NOT_EXPORTED), so resolve the package entry —
+          # which is exported — and read browsers.json as a plain sibling
+          # file. The printed key is exactly the build string `npx playwright
+          # install` downloads (e.g. chromium-1234).
+          command: |
+            node -e "const path=require('path');const fs=require('fs');const core=path.dirname(require.resolve('playwright-core'));const j=JSON.parse(fs.readFileSync(path.join(core,'browsers.json'),'utf8'));console.log('chromium-'+j.browsers.find((b)=>b.name==='chromium').revision)" > .playwright-browser-key
+      - restore_cache:
+          keys:
+            - v1-playwright-chromium-{{ checksum ".playwright-browser-key" }}
+            - v1-playwright-chromium-
+      - run:
+          name: Install Playwright browsers
+          command: npx playwright install --with-deps chromium
+      - save_cache:
+          key: v1-playwright-chromium-{{ checksum ".playwright-browser-key" }}
+          paths:
+            - ~/.cache/ms-playwright
+
+      - run:
+          name: Wait for PostgreSQL
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 5432 && echo "postgres is up" && exit 0
+              sleep 2
+            done
+            echo "postgres did not become available" >&2
+            exit 1
+
+      - run:
+          name: Prepare seeded test database
+          command: npm run db:setup:ci && npm run db:seed
+
+      - run:
+          name: E2E happy paths
+          # Playwright's webServer builds and starts the production app,
+          # pointed at the seeded database via DATABASE_URL above.
+          command: npm run test:e2e
+
+workflows:
+  quality-gate:
+    jobs:
+      - quality
+      - e2e
