@@ -14,10 +14,11 @@ import {
 } from "./gtfs"
 import * as schema from "./schema"
 import { stations } from "./schema"
+import { seedEmployersAndJobs } from "./seed-content"
 
 export const PINNED_GTFS_PATH = path.join("gtfs", "google_transit.zip")
 
-type Database = ReturnType<typeof drizzle<typeof schema>>
+export type Database = ReturnType<typeof drizzle<typeof schema>>
 
 /**
  * The value the conflicting row would have been given, for use in the DO UPDATE
@@ -28,9 +29,16 @@ function excluded(column: PgColumn) {
   return sql.raw(`excluded."${column.name}"`)
 }
 
-export type SeedResult = {
+export type StationSeedResult = {
   stationCount: number
   removedCount: number
+}
+
+export type SeedResult = StationSeedResult & {
+  employerCount: number
+  companyCount: number
+  jobCount: number
+  jobStationCount: number
 }
 
 /** Reads and validates the station set from the pinned feed on disk. */
@@ -57,7 +65,7 @@ export async function loadPinnedStations(zipPath = PINNED_GTFS_PATH): Promise<St
 export async function seedStations(
   db: Database,
   records: StationRecord[],
-): Promise<SeedResult> {
+): Promise<StationSeedResult> {
   if (records.length === 0) {
     throw new Error("Refusing to seed an empty station set")
   }
@@ -89,7 +97,12 @@ export async function seedStations(
   return { stationCount: row?.value ?? 0, removedCount: removed.length }
 }
 
-/** Connects, seeds, and closes. Used by `npm run db:seed`. */
+/**
+ * Connects, seeds, and closes. Used by `npm run db:seed`.
+ *
+ * Content seeding runs after stations, on the same connection: every job
+ * association references a station row, so the order isn't optional.
+ */
 export async function runSeed(
   connectionString: string,
   zipPath = PINNED_GTFS_PATH,
@@ -97,7 +110,9 @@ export async function runSeed(
   const client = postgres(connectionString, { max: 1 })
   try {
     const db = drizzle(client, { schema })
-    return await seedStations(db, await loadPinnedStations(zipPath))
+    const stationResult = await seedStations(db, await loadPinnedStations(zipPath))
+    const contentResult = await seedEmployersAndJobs(db)
+    return { ...stationResult, ...contentResult }
   } finally {
     await client.end()
   }

@@ -1,13 +1,19 @@
 // @vitest-environment node
-import { count, eq, sql } from "drizzle-orm"
+import { count, eq, inArray, sql } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { EXPECTED_STATION_COUNT, SEC_DISTRICT_STOP_ID } from "@/db/gtfs"
 import { toPointEwkt } from "@/db/postgis"
 import { loadPinnedStations, seedStations } from "@/db/seed"
-import { companies, jobs, jobStations, stations, users } from "@/db/schema"
+import { FICTIONAL_EMPLOYERS, JOB_FIXTURES, seedEmployersAndJobs } from "@/db/seed-content"
+import { companies, jobs, jobStations, MARTA_LINES, stations, users } from "@/db/schema"
 
 import { connect, hasDatabase, violatedConstraint } from "./helpers/database"
+
+const ONE_MILE_METRES = 1609.344
+// MARTA-adjacent real employer names that must never appear in seeded content
+// — seeding a real company's name would imply an opening that doesn't exist.
+const REAL_COMPANY_NAMES = ["MARTA", "Delta", "Coca-Cola", "Home Depot", "UPS"]
 
 describe.skipIf(!hasDatabase)("station seed", () => {
   const { client, db } = hasDatabase ? connect() : ({} as ReturnType<typeof connect>)
@@ -220,7 +226,6 @@ describe.skipIf(!hasDatabase)("schema constraints", () => {
       .from(stations)
       .where(eq(stations.stopId, SEC_DISTRICT_STOP_ID))
     const origin = toPointEwkt(station!.location)
-    const ONE_MILE_METRES = 1609.344
 
     const near = await db.execute<{ id: string }>(sql`
       select ${jobs.id} as id from ${jobs}
@@ -241,5 +246,105 @@ describe.skipIf(!hasDatabase)("schema constraints", () => {
       )
     `)
     expect(far.map((row) => row.id)).not.toContain(jobId)
+  })
+})
+
+describe.skipIf(!hasDatabase)("employer and job content seed", () => {
+  const { client, db } = hasDatabase ? connect() : ({} as ReturnType<typeof connect>)
+
+  beforeAll(async () => {
+    // Order matters: job_stations references stations with ON DELETE RESTRICT,
+    // and jobs/companies reference users. Stations are reseeded rather than
+    // assumed present, so this block is self-sufficient if run in isolation.
+    await db.delete(jobStations)
+    await db.delete(jobs)
+    await db.delete(companies)
+    await db.delete(users)
+    await seedStations(db, await loadPinnedStations())
+  })
+
+  afterAll(async () => {
+    await client.end()
+  })
+
+  it("publishes at least 20 jobs across at least 8 stations and all 4 lines", async () => {
+    const result = await seedEmployersAndJobs(db)
+    expect(result.jobCount).toBeGreaterThanOrEqual(20)
+
+    const publishedJobs = await db.select().from(jobs).where(eq(jobs.status, "published"))
+    expect(publishedJobs.length).toBeGreaterThanOrEqual(20)
+
+    const associations = await db.select({ stationId: jobStations.stationId }).from(jobStations)
+    const distinctStationIds = new Set(associations.map((row) => row.stationId))
+    expect(distinctStationIds.size).toBeGreaterThanOrEqual(8)
+
+    const usedStations = await db
+      .select()
+      .from(stations)
+      .where(inArray(stations.stopId, Array.from(distinctStationIds)))
+    const coveredLines = new Set(usedStations.flatMap((station) => station.lines))
+    for (const line of MARTA_LINES) {
+      expect(coveredLines).toContain(line)
+    }
+  })
+
+  it("uses no real company names", async () => {
+    const companyRows = await db.select({ name: companies.name }).from(companies)
+    const seededNames = companyRows.map((row) => row.name)
+    for (const realName of REAL_COMPANY_NAMES) {
+      expect(seededNames).not.toContain(realName)
+    }
+    // Every seeded company should also be traceable back to the fixture list,
+    // not just absent from a denylist.
+    const fixtureNames = new Set(FICTIONAL_EMPLOYERS.map((employer) => employer.companyName))
+    for (const name of seededNames) {
+      expect(fixtureNames).toContain(name)
+    }
+  })
+
+  it("places every job within one mile of each of its station associations", async () => {
+    const rows = await db
+      .select({
+        jobLocation: jobs.location,
+        stationLocation: stations.location,
+      })
+      .from(jobStations)
+      .innerJoin(jobs, eq(jobs.id, jobStations.jobId))
+      .innerJoin(stations, eq(stations.stopId, jobStations.stationId))
+
+    expect(rows.length).toBe(JOB_FIXTURES.length)
+
+    for (const row of rows) {
+      const [distanceRow] = await db.execute<{ metres: number }>(sql`
+        select st_distance(
+          ${sql.raw(`'${toPointEwkt(row.jobLocation)}'::geography`)},
+          ${sql.raw(`'${toPointEwkt(row.stationLocation)}'::geography`)}
+        ) as metres
+      `)
+      expect(Number(distanceRow?.metres)).toBeLessThanOrEqual(ONE_MILE_METRES)
+    }
+  })
+
+  it("is idempotent — a second run does not duplicate employers, companies, or jobs", async () => {
+    const beforeCompanies = await db.select().from(companies).orderBy(companies.id)
+    const beforeJobs = await db.select().from(jobs).orderBy(jobs.id)
+    const beforeUsers = await db.select().from(users).orderBy(users.id)
+    const beforeAssociations = await db.select().from(jobStations)
+
+    const second = await seedEmployersAndJobs(db)
+    expect(second.jobCount).toBe(JOB_FIXTURES.length)
+    expect(second.companyCount).toBe(FICTIONAL_EMPLOYERS.length)
+
+    const afterCompanies = await db.select().from(companies).orderBy(companies.id)
+    const afterJobs = await db.select().from(jobs).orderBy(jobs.id)
+    const afterUsers = await db.select().from(users).orderBy(users.id)
+    const afterAssociations = await db.select().from(jobStations)
+
+    expect(afterCompanies.length).toBe(beforeCompanies.length)
+    expect(afterJobs.length).toBe(beforeJobs.length)
+    expect(afterUsers.length).toBe(beforeUsers.length)
+    expect(afterAssociations.length).toBe(beforeAssociations.length)
+    expect(afterCompanies.map((row) => row.id)).toEqual(beforeCompanies.map((row) => row.id))
+    expect(afterJobs.map((row) => row.id)).toEqual(beforeJobs.map((row) => row.id))
   })
 })
