@@ -1,12 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "./tokens.css";
 
 body {
-  color: theme("colors.ink.primary");
+  color: var(--color-ink-primary);
 }
 
 *:focus-visible {
-  outline: theme("outlineWidth.DEFAULT") solid theme("colors.ink.primary");
+  outline: var(--focus-ring-width) solid var(--color-ink-primary);
   outline-offset: 2px;
 }
