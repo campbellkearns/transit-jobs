@@ -1,5 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
+
+import { requireDatabaseUrl } from "./env"
 import * as schema from "./schema"
 
 /**
@@ -9,11 +11,7 @@ import * as schema from "./schema"
  * touch the database in T1).
  */
 function createClient() {
-  const connectionString = process.env.DATABASE_URL
-  if (!connectionString) {
-    throw new Error("DATABASE_URL is not set")
-  }
-  const queryClient = postgres(connectionString)
+  const queryClient = postgres(requireDatabaseUrl())
   return drizzle(queryClient, { schema })
 }
 
