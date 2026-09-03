@@ -107,10 +107,14 @@ jobs:
       # new archive is assembled. No node_modules or ~/.npm caches anywhere.
       - run:
           name: Resolve Playwright Chromium build
-          command: >
-            node -e "console.log(require('playwright-core/browsers.json').browsers
-            .find((browser) => browser.name === 'chromium').revision)"
-            | xargs -I{} echo "chromium-{}" > .playwright-browser-key
+          # playwright-core's `exports` map does not expose ./browsers.json
+          # (require('playwright-core/browsers.json') throws
+          # ERR_PACKAGE_PATH_NOT_EXPORTED), so resolve the package entry —
+          # which is exported — and read browsers.json as a plain sibling
+          # file. The printed key is exactly the build string `npx playwright
+          # install` downloads (e.g. chromium-1234).
+          command: |
+            node -e "const path=require('path');const fs=require('fs');const core=path.dirname(require.resolve('playwright-core'));const j=JSON.parse(fs.readFileSync(path.join(core,'browsers.json'),'utf8'));console.log('chromium-'+j.browsers.find((b)=>b.name==='chromium').revision)" > .playwright-browser-key
       - restore_cache:
           keys:
             - v1-playwright-chromium-{{ checksum ".playwright-browser-key" }}
