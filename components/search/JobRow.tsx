@@ -17,6 +17,10 @@ function Dot() {
 
 type JobRowProps = {
   job: SearchResult
+  /** Highlighted because the matching pin is active on the map (T7 sync). */
+  active?: boolean
+  /** Reports hover/focus so the map can highlight this job's pin. */
+  onActiveChange?: (active: boolean) => void
 }
 
 /**
@@ -30,14 +34,23 @@ type JobRowProps = {
  * The walk figure carries "≈" because it is the ×1.25 estimate, not the
  * geodesic distance the results were filtered and sorted by.
  */
-export function JobRow({ job }: JobRowProps) {
+export function JobRow({ job, active = false, onActiveChange }: JobRowProps) {
   const salary = formatSalaryRange(job.salaryMin, job.salaryMax)
+
+  const reportActive = (next: boolean) => () => onActiveChange?.(next)
 
   return (
     <li>
       <Link
         href={`/jobs/${job.id}`}
-        className="block px-4 py-4 hover:bg-ink-primary/[0.03] sm:px-6"
+        onMouseEnter={reportActive(true)}
+        onMouseLeave={reportActive(false)}
+        onFocus={reportActive(true)}
+        onBlur={reportActive(false)}
+        data-active={active || undefined}
+        className={`block px-4 py-4 hover:bg-ink-primary/[0.03] sm:px-6 ${
+          active ? "bg-ink-primary/[0.05]" : ""
+        }`}
       >
         <h3 className="text-base font-semibold text-ink-primary">{job.title}</h3>
 

@@ -59,6 +59,31 @@ export type SearchResult = {
   walkMiles: number
 }
 
+/**
+ * Every rail station, for the map layer (T7).
+ *
+ * The map plots all 38 stations, not only the ones anchoring a result: the
+ * station layer is the seeker's picture of the network, and the search above
+ * already treats the stations table — not job_stations — as the geography of
+ * record. Reusing SearchResultStation keeps the map and the list reading
+ * identical station shapes.
+ */
+export async function listStations(): Promise<SearchResultStation[]> {
+  const rows = await getDb().execute<{
+    stop_id: string
+    name: string
+    lines: string[]
+    location: string
+  }>(sql`select stop_id, name, lines, location from stations order by name asc`)
+
+  return Array.from(rows).map((row) => ({
+    stopId: row.stop_id,
+    name: row.name,
+    lines: row.lines as MartaLine[],
+    location: parsePointEwkbHex(row.location),
+  }))
+}
+
 type SearchRow = {
   id: string
   title: string
