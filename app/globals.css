@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+body {
+  color: var(--color-ink-primary);
+}
+
+*:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ink-primary);
+  outline-offset: 2px;
+}

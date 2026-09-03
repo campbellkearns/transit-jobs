@@ -1,0 +1,46 @@
+/*
+ * Design tokens for the transit-jobs UI (Tailwind v4 CSS-first theme).
+ *
+ * Source of truth: UI direction blueprint (art_cJdHuq28). Marketplace
+ * utility over brand identity — a neutral, ink-driven base where the only
+ * chroma is MARTA line wayfinding. These values are Tailwind palette
+ * stand-ins chosen for the product, not MARTA's brand hexes: the colors
+ * describe data (which rail line), never a logo or brand mark.
+ *
+ * Defined once here so the four visual PRs (T4 employer forms, T6 search
+ * list, T7 map, T8 detail) never need to touch Tailwind setup — they
+ * consume these tokens as Tailwind classes (bg-line-blue, text-ink-primary,
+ * etc.) instead.
+ */
+@theme {
+  /* Primary action color. Buttons and links are near-black — chroma is
+   * reserved for lines and status, so "blue" never means both "Blue Line"
+   * and "click here." */
+  --color-ink: #111827;         /* gray-900 — DEFAULT alias: bg-ink */
+  --color-ink-primary: #111827; /* gray-900 */
+
+  /* MARTA line hues. Always paired with the line name in the UI — color
+   * never carries meaning alone (badges and chips render the label too).
+   * Error states share the red hue by coincidence (line-red doubles as
+   * the status color); meaning never rides on color alone. */
+  --color-line-blue: #2563eb;  /* blue-600 */
+  --color-line-gold: #fbbf24;  /* amber-400 */
+  --color-line-green: #16a34a; /* green-600 */
+  --color-line-red: #dc2626;   /* red-600 */
+
+  /* Inter via next/font — the variable is set by app/layout.tsx. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Type scale (px), per the UI direction. `tabular-nums` is applied at
+   * the component level for salary and walk-distance figures. */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-4xl: 32px;
+
+  /* Visible focus ring — ink, not blue, to stay clear of the line
+   * palette. Applied by the *:focus-visible rule in globals.css. */
+  --focus-ring-width: 2px;
+}

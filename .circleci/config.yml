@@ -1,0 +1,83 @@
+# Quality gate for transit-jobs.
+#
+# GitHub Actions is unusable on this account (billing lock refuses to start
+# jobs), so the same gate runs here: one job, one status check (`ci/quality`),
+# on every branch push — which covers PR checks plus pushes to main and
+# release/**. Mirrors the old .github/workflows/ci.yml exactly:
+# npm ci -> db setup -> lint -> typecheck -> vitest -> build.
+#
+# A Postgres service container backs the auth integration tests (real
+# register/login/logout/role-authorization flows against `db/schema.ts`'s
+# `users` table) — test/integration/auth.test.ts refuses to run without
+# DATABASE_URL, so a missing database fails the build rather than silently
+# skipping the suite. AUTH_SECRET is a fixed non-production value: it only
+# needs to be stable across the job's own Auth.js instances, never reused
+# outside CI.
+version: 2.1
+
+jobs:
+  quality:
+    docker:
+      - image: cimg/node:20.19.6
+        environment:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/transit_jobs_test
+          AUTH_SECRET: circleci-quality-gate-test-secret-do-not-reuse
+      - image: cimg/postgres:16.4
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transit_jobs_test
+    steps:
+      - checkout
+
+      # Restore node_modules from the most recent cache whose lockfile
+      # matches; fall back to any npm cache and let npm ci verify.
+      - restore_cache:
+          keys:
+            - npm-v1-{{ checksum "package-lock.json" }}
+            - npm-v1-
+
+      - run:
+          name: Install dependencies
+          command: npm ci
+
+      - save_cache:
+          key: npm-v1-{{ checksum "package-lock.json" }}
+          paths:
+            - node_modules
+            - ~/.npm
+
+      - run:
+          name: Wait for Postgres
+          command: |
+            for i in $(seq 1 30); do
+              nc -z localhost 5432 && echo "postgres is up" && exit 0
+              sleep 2
+            done
+            echo "postgres did not become available" >&2
+            exit 1
+
+      - run:
+          name: Prepare test database
+          command: npm run db:push:ci
+
+      - run:
+          name: Lint
+          command: npm run lint
+
+      - run:
+          name: Typecheck
+          command: npm run typecheck
+
+      - run:
+          name: Unit and integration tests
+          command: npm run test
+
+      - run:
+          name: Build
+          command: npm run build
+
+workflows:
+  quality-gate:
+    jobs:
+      - quality
