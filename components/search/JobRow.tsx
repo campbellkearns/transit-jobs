@@ -48,7 +48,7 @@ export function JobRow({ job, active = false, onActiveChange }: JobRowProps) {
         onFocus={reportActive(true)}
         onBlur={reportActive(false)}
         data-active={active || undefined}
-        className={`block px-4 py-4 hover:bg-ink-primary/[0.03] sm:px-6 ${
+        className={`block px-4 py-4 hover:bg-ink-primary/[0.03] focus-visible:bg-ink-primary/[0.05] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink-primary sm:px-6 ${
           active ? "bg-ink-primary/[0.05]" : ""
         }`}
       >

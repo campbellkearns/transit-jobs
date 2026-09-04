@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import type { ComponentProps, ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -31,8 +31,22 @@ type MarkerProps = {
 const { fitBoundsSpy } = vi.hoisted(() => ({ fitBoundsSpy: vi.fn() }))
 
 vi.mock("react-leaflet", () => {
-  function MapContainer({ children }: { children?: ReactNode }) {
-    return <div data-testid="map-container">{children}</div>
+  function MapContainer({
+    children,
+    scrollWheelZoom,
+  }: {
+    children?: ReactNode
+    scrollWheelZoom?: boolean
+  }) {
+    return (
+      <div data-testid="map-container" data-scroll-wheel-zoom={String(Boolean(scrollWheelZoom))}>
+        {children}
+      </div>
+    )
+  }
+
+  function ZoomControl({ position }: { position?: string }) {
+    return <div data-testid="map-zoom-control" data-position={position} />
   }
 
   function TileLayer({ attribution }: { attribution: string }) {
@@ -61,7 +75,7 @@ vi.mock("react-leaflet", () => {
     return { fitBounds: fitBoundsSpy }
   }
 
-  return { MapContainer, TileLayer, Marker, Tooltip, useMap }
+  return { MapContainer, ZoomControl, TileLayer, Marker, Tooltip, useMap }
 })
 
 function makeStation(overrides: Partial<SearchResultStation> = {}): SearchResultStation {
@@ -122,6 +136,23 @@ function renderWorkspace(overrides: Partial<WorkspaceProps> = {}) {
   )
 }
 
+/**
+ * Overrides the jsdom viewport for the duration of a test — MapPanel reads
+ * `window.innerWidth` to decide whether the floating rail overlays the map
+ * (and so whether the fit must keep its width clear).
+ */
+function withViewport(width: number): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(window, "innerWidth")
+  Object.defineProperty(window, "innerWidth", { value: width, configurable: true })
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(window, "innerWidth", descriptor)
+    } else {
+      delete (window as { innerWidth?: number }).innerWidth
+    }
+  }
+}
+
 describe("SearchWorkspace", () => {
   it("shows the skeleton first, then the map after the dynamic import lands", async () => {
     renderWorkspace()
@@ -179,6 +210,22 @@ describe("SearchWorkspace", () => {
     expect(attribution).toContain("ODbL")
   })
 
+  it("floats the results as a rail over the full-bleed canvas — one list, zoom clear of the rail", async () => {
+    renderWorkspace()
+    await screen.findByTestId("map-container")
+
+    // The rail is the list's container — the rows live inside it, and there
+    // is exactly one list in the DOM (no duplicated rows across breakpoints).
+    const rail = screen.getByTestId("results-rail")
+    expect(within(rail).getByRole("link", { name: /warehouse lead/i })).toBeInTheDocument()
+    expect(screen.getAllByRole("link", { name: /warehouse lead/i })).toHaveLength(1)
+
+    // Map-as-page: the wheel zooms the search canvas, and the zoom control
+    // sits top-right, clear of the left-hand rail.
+    expect(screen.getByTestId("map-container")).toHaveAttribute("data-scroll-wheel-zoom", "true")
+    expect(screen.getByTestId("map-zoom-control")).toHaveAttribute("data-position", "topright")
+  })
+
   it("highlights the matching pin when a list row is hovered, and clears on leave", async () => {
     renderWorkspace()
     await screen.findByTestId("map-container")
@@ -229,6 +276,52 @@ describe("MapPanel search mode", () => {
     const [, options] = fitBoundsSpy.mock.calls[0] ?? []
     expect(options).toEqual({ padding: [24, 24], maxZoom: 14 })
   })
+
+  it("keeps the rail's width clear when fitting on an overlay-viewport screen", async () => {
+    render(
+      <MapPanel
+        results={RESULTS}
+        stations={STATIONS}
+        activeJobId={null}
+        onActiveJobChange={vi.fn()}
+        fitPaddingLeft={352}
+      />,
+    )
+    await screen.findByTestId("map-container")
+
+    // jsdom's default viewport is 1024px — at overlay width the fit centers
+    // the network beside the 352px rail (336px rail + 16px gutter), +24px of
+    // breathing room.
+    const [, options] = fitBoundsSpy.mock.calls[0] ?? []
+    expect(options).toEqual({
+      paddingTopLeft: [376, 24],
+      paddingBottomRight: [24, 24],
+      maxZoom: 14,
+    })
+  })
+
+  it("fits symmetrically below the rail overlay breakpoint — no phantom rail padding", async () => {
+    const restoreViewport = withViewport(375)
+    try {
+      render(
+        <MapPanel
+          results={RESULTS}
+          stations={STATIONS}
+          activeJobId={null}
+          onActiveJobChange={vi.fn()}
+          fitPaddingLeft={352}
+        />,
+      )
+      await screen.findByTestId("map-container")
+
+      // On a phone the rail is page flow, not an overlay — padding for it
+      // would shove the network off the left edge of a 375px map.
+      const [, options] = fitBoundsSpy.mock.calls[0] ?? []
+      expect(options).toEqual({ padding: [24, 24], maxZoom: 14 })
+    } finally {
+      restoreViewport()
+    }
+  })
 })
 
 describe("MapPanel focused mode (job detail page)", () => {
@@ -244,6 +337,15 @@ describe("MapPanel focused mode (job detail page)", () => {
   function renderFocused() {
     return render(<MapPanel stations={STATIONS} focusedJob={FOCUSED_JOB} />)
   }
+
+  it("keeps the wheel off the detail card and the chrome on it", async () => {
+    renderFocused()
+    await screen.findByTestId("map-container")
+
+    // The detail map is a card in a scrolling page: a wheel over it should
+    // scroll the page, so the wheel-zoom default (off) holds here.
+    expect(screen.getByTestId("map-container")).toHaveAttribute("data-scroll-wheel-zoom", "false")
+  })
 
   it("renders the focused job's pin always active beside its stations, with its tooltip", async () => {
     renderFocused()

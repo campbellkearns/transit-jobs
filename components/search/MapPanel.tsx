@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css"
 
 import { useEffect, useMemo } from "react"
 import { divIcon, latLngBounds } from "leaflet"
-import { MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-leaflet"
+import { MapContainer, Marker, TileLayer, Tooltip, ZoomControl, useMap } from "react-leaflet"
 
 import { jobPinHtml, stationMarkerHtml } from "@/lib/search/mapMarkers"
 import type { SearchResult, SearchResultStation } from "@/lib/search/query"
@@ -28,9 +28,30 @@ const JOB_ICON_ANCHOR: [number, number] = [6, 6]
 /** Fallback center (downtown Atlanta) for the instant before fitting. */
 const FALLBACK_CENTER: [number, number] = [33.749, -84.388]
 
+/**
+ * Viewport (px) at which the search results leave page flow and become the
+ * floating rail overlaying the map's left edge. Must match the `md:`
+ * breakpoint classes on the rail container in SearchWorkspace.
+ */
+const RAIL_OVERLAY_MIN_VIEWPORT = 768
+
+/**
+ * The rail overlays the map on desktop, so fitted bounds must center the
+ * network in the space beside the rail — station markers and their name
+ * labels must not land beneath it. A no-op below the overlay breakpoint
+ * (where the rail is page flow, not an overlay) and in focused mode (which
+ * has no rail).
+ */
+function railInset(viewportWidth: number, railWidth: number | undefined): number | undefined {
+  if (railWidth === undefined || viewportWidth < RAIL_OVERLAY_MIN_VIEWPORT) return undefined
+  return railWidth
+}
+
 type FitPositionsProps = {
   positions: [number, number][]
   maxZoom: number
+  /** Horizontal room (px) kept clear on the left — the floating rail's width. */
+  paddingLeft?: number
 }
 
 /**
@@ -43,14 +64,21 @@ type FitPositionsProps = {
  * the whole network (stations only); focused mode frames a job pin plus
  * its stations, so it is allowed to zoom in tighter.
  */
-function FitPositions({ positions, maxZoom }: FitPositionsProps) {
+function FitPositions({ positions, maxZoom, paddingLeft }: FitPositionsProps) {
   const map = useMap()
 
   useEffect(() => {
     if (positions.length === 0) return
     const bounds = latLngBounds(positions)
-    map.fitBounds(bounds, { padding: [24, 24], maxZoom })
-  }, [map, positions, maxZoom])
+    const fitOptions = paddingLeft
+      ? {
+          paddingTopLeft: [paddingLeft + 24, 24] as [number, number],
+          paddingBottomRight: [24, 24] as [number, number],
+          maxZoom,
+        }
+      : { padding: [24, 24] as [number, number], maxZoom }
+    map.fitBounds(bounds, fitOptions)
+  }, [map, positions, maxZoom, paddingLeft])
 
   return null
 }
@@ -89,6 +117,27 @@ type MapPanelProps = {
    * beside it, focused mode wires no handlers.
    */
   focusedJob?: FocusedJob
+  /**
+   * Wheel behavior is a surface decision: on the search canvas the map IS
+   * the page (there is nothing behind it left to scroll), so a wheel over
+   * the map zooms — the Zillow/Airbnb pattern the full-bleed rework calls
+   * for. The detail map is a card inside a scrolling page, where a wheel
+   * should scroll the page, so it keeps the default (off).
+   */
+  scrollWheelZoom?: boolean
+  /**
+   * Width (px) of the floating results rail overlaying the search map's
+   * left edge — fitted bounds keep that space clear so station labels stay
+   * visible beside the rail, not under it. Applied only at the rail's
+   * overlay viewport.
+   */
+  fitPaddingLeft?: number
+  /**
+   * Full-bleed presentation (the search canvas): drops the card chrome —
+   * the rounded border — because the map's edges are the page's edges. The
+   * detail card keeps the chrome.
+   */
+  fullBleed?: boolean
 }
 
 /**
@@ -101,16 +150,21 @@ type MapPanelProps = {
  *
  * Two modes:
  *
- * - Search (default): every rail station as a line-colored, always-labeled
- *   marker, and each job result as an ink pin at its real location. Hovering
- *   either side of the list/map pair highlights the matching pin/row via
- *   `activeJobId` — the same nearest-station geography the list is sorted by.
+ * - Search (default): the page's full-bleed canvas, edge to edge below the
+ *   filter bar, with every rail station as a line-colored, always-labeled
+ *   marker and each job result as an ink pin at its real location. The
+ *   results float over it as a rail; hovering either the rail's rows or the
+ *   pins highlights the matching pin/row via `activeJobId` — the same
+ *   nearest-station geography the list is sorted by. The wheel zooms (the
+ *   map is the page; see `scrollWheelZoom`), and the fit keeps the rail's
+ *   width clear so labels stay readable (see `fitPaddingLeft`).
  * - Focused (`focusedJob`, job detail page): one always-active pin for the
- *   selected job beside its associated stations, viewport fitted on the pin.
+ *   selected job beside its associated stations, viewport fitted on the pin,
+ *   presented as a card with the wheel left alone.
  *
  * Height is the caller's job: the shell fills its container (`h-full`), and
- * the call site proposes the size — viewport-height and sticky on search,
- * a fixed-height card on the detail page.
+ * the call site proposes the size — the viewport on search, a fixed-height
+ * card on the detail page.
  */
 export default function MapPanel({
   results = [],
@@ -118,6 +172,9 @@ export default function MapPanel({
   activeJobId = null,
   onActiveJobChange,
   focusedJob,
+  scrollWheelZoom = false,
+  fitPaddingLeft,
+  fullBleed = false,
 }: MapPanelProps) {
   // Memoized so the fit effect sees stable deps — an inline array would
   // re-fit the viewport after every render.
@@ -131,22 +188,37 @@ export default function MapPanel({
     return points
   }, [focusedJob, stations])
 
+  // The fit padding is a viewport decision (the rail only overlays at md+),
+  // read once per render — this component is client-only (`next/dynamic`
+  // `ssr: false`), so `window` is a given.
+  const railPadding = railInset(typeof window === "undefined" ? 0 : window.innerWidth, fitPaddingLeft)
+
   return (
-    <div className="h-full overflow-hidden rounded-md border border-ink-primary/10">
+    <div
+      className={
+        fullBleed
+          ? "h-full overflow-hidden"
+          : "h-full overflow-hidden rounded-md border border-ink-primary/10"
+      }
+    >
       {/*
-        scrollWheelZoom stays off: the map sits beside a scrolling list, and a
-        wheel over the map should scroll the page, not silently zoom the map.
+        scrollWheelZoom is per-surface (see the prop doc). The +/- control
+        sits top-right — clear of the floating results rail on the left —
+        keeping zoom reachable for touch and keyboard users regardless.
       */}
       <MapContainer
         className="h-full w-full"
         center={FALLBACK_CENTER}
         zoom={10}
-        scrollWheelZoom={false}
+        scrollWheelZoom={scrollWheelZoom}
+        zoomControl={false}
       >
+        <ZoomControl position="topright" />
         <TileLayer url={OSM_TILE_URL} attribution={OSM_ATTRIBUTION} maxZoom={19} />
         <FitPositions
           positions={fitPositions}
           maxZoom={focusedJob ? FOCUSED_FIT_MAX_ZOOM : SEARCH_FIT_MAX_ZOOM}
+          paddingLeft={railPadding}
         />
 
         {stations.map((station) => (
