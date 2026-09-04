@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import type { ComponentProps, ReactNode } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import MapPanel, { type FocusedJob } from "@/components/search/MapPanel"
 import { SearchWorkspace } from "@/components/search/SearchWorkspace"
 import type { SearchResult, SearchResultStation } from "@/lib/search/query"
 
@@ -22,6 +23,12 @@ type MarkerProps = {
   eventHandlers?: Record<string, (event?: unknown) => void>
   children?: ReactNode
 }
+
+/**
+ * Shared fitBounds spy: FitPositions calls it on mount, and the focused-mode
+ * tests assert the frame (points + zoom ceiling) the shell asks for.
+ */
+const { fitBoundsSpy } = vi.hoisted(() => ({ fitBoundsSpy: vi.fn() }))
 
 vi.mock("react-leaflet", () => {
   function MapContainer({ children }: { children?: ReactNode }) {
@@ -51,7 +58,7 @@ vi.mock("react-leaflet", () => {
   }
 
   function useMap() {
-    return { fitBounds: vi.fn() }
+    return { fitBounds: fitBoundsSpy }
   }
 
   return { MapContainer, TileLayer, Marker, Tooltip, useMap }
@@ -95,8 +102,10 @@ const STATIONS: SearchResultStation[] = [
   }),
 ]
 
+const FIRST_RESULT = makeResult()
+
 const RESULTS: SearchResult[] = [
-  makeResult(),
+  FIRST_RESULT,
   makeResult({
     id: "22222222-2222-2222-2222-222222222222",
     title: "Senior Analyst",
@@ -191,5 +200,94 @@ describe("SearchWorkspace", () => {
         .filter((marker) => (marker.getAttribute("data-icon-html") ?? "").includes("is-active")),
     ).toHaveLength(0)
     expect(row).not.toHaveAttribute("data-active")
+  })
+})
+
+describe("MapPanel search mode", () => {
+  beforeEach(() => fitBoundsSpy.mockClear())
+
+  it("renders a single search result as one inactive pin (single-result search)", async () => {
+    render(
+      <MapPanel results={[FIRST_RESULT]} stations={STATIONS} activeJobId={null} onActiveJobChange={vi.fn()} />,
+    )
+    await screen.findByTestId("map-container")
+
+    const pins = screen
+      .getAllByTestId("map-marker")
+      .filter((marker) => (marker.getAttribute("data-icon-html") ?? "").includes("map-job-pin"))
+    expect(pins).toHaveLength(1)
+    expect(pins[0]?.getAttribute("data-icon-html")).not.toContain("is-active")
+  })
+
+  it("keeps the network framing — stations only, maxZoom 14", async () => {
+    render(
+      <MapPanel results={RESULTS} stations={STATIONS} activeJobId={null} onActiveJobChange={vi.fn()} />,
+    )
+    await screen.findByTestId("map-container")
+
+    expect(fitBoundsSpy).toHaveBeenCalledTimes(1)
+    const [, options] = fitBoundsSpy.mock.calls[0] ?? []
+    expect(options).toEqual({ padding: [24, 24], maxZoom: 14 })
+  })
+})
+
+describe("MapPanel focused mode (job detail page)", () => {
+  beforeEach(() => fitBoundsSpy.mockClear())
+
+  const FOCUSED_JOB: FocusedJob = {
+    id: FIRST_RESULT.id,
+    title: FIRST_RESULT.title,
+    companyName: FIRST_RESULT.companyName,
+    location: FIRST_RESULT.location,
+  }
+
+  function renderFocused() {
+    return render(<MapPanel stations={STATIONS} focusedJob={FOCUSED_JOB} />)
+  }
+
+  it("renders the focused job's pin always active beside its stations, with its tooltip", async () => {
+    renderFocused()
+    await screen.findByTestId("map-container")
+
+    const markers = screen.getAllByTestId("map-marker")
+    const jobPins = markers.filter((marker) =>
+      (marker.getAttribute("data-icon-html") ?? "").includes("map-job-pin"),
+    )
+    const stationMarkers = markers.filter((marker) =>
+      (marker.getAttribute("data-icon-html") ?? "").includes("map-station-marker"),
+    )
+
+    expect(jobPins).toHaveLength(1)
+    expect(jobPins[0]?.getAttribute("data-icon-html")).toContain("is-active")
+    expect(stationMarkers).toHaveLength(STATIONS.length)
+    expect(screen.getByTestId("map-tooltip")).toHaveTextContent("Warehouse Lead")
+  })
+
+  it("does not wire hover sync — hovering the pin leaves it active", async () => {
+    renderFocused()
+    await screen.findByTestId("map-container")
+
+    const pin = screen
+      .getAllByTestId("map-marker")
+      .find((marker) => (marker.getAttribute("data-icon-html") ?? "").includes("map-job-pin"))
+    if (!pin) throw new Error("focused job pin not rendered")
+
+    fireEvent.mouseEnter(pin)
+    fireEvent.mouseLeave(pin)
+
+    expect(pin.getAttribute("data-icon-html")).toContain("is-active")
+  })
+
+  it("fits the viewport on the job pin plus its stations, tighter than the network framing", async () => {
+    renderFocused()
+    await screen.findByTestId("map-container")
+
+    expect(fitBoundsSpy).toHaveBeenCalledTimes(1)
+    const [bounds, options] = fitBoundsSpy.mock.calls[0] ?? []
+    expect(options).toEqual({ padding: [24, 24], maxZoom: 15 })
+    // Real Leaflet bounds: the frame contains the pin and every station.
+    expect(bounds.contains([33.75, -84.4])).toBe(true)
+    expect(bounds.contains([33.755, -84.39])).toBe(true)
+    expect(bounds.contains([33.77, -84.29])).toBe(true)
   })
 })
