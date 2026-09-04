@@ -1,0 +1,107 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+body {
+  color: var(--color-ink-primary);
+}
+
+*:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ink-primary);
+  outline-offset: 2px;
+}
+
+/*
+ * Map (T7) — Leaflet renders marker icons as raw injected HTML outside
+ * React, so their styles live here rather than in Tailwind classes. Chrome
+ * stays ink-only: Leaflet's default attribution link color is a teal-blue,
+ * which would collide with the BLUE line hue, so links and controls are
+ * pinned to the ink token; the only chroma on the map is the line data
+ * itself, painted inline by lib/search/mapMarkers.
+ */
+
+.leaflet-container {
+  font: inherit;
+}
+
+/* divIcon replaces the default white-box pane chrome; markers style themselves. */
+.map-station-icon,
+.map-job-icon {
+  background: transparent;
+  border: none;
+}
+
+.map-station-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.map-station-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.map-station-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+.map-station-name {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-ink-primary);
+  background: rgb(255 255 255 / 0.85);
+  padding: 2px 4px;
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.15);
+}
+
+.map-job-pin {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: var(--color-ink-primary);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 1px 3px rgb(17 24 39 / 0.35);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* The active pin — hovered on the map, or its row hovered in the list — is
+ * ink-highlighted, never hue-highlighted: chroma on the map means rail lines. */
+.map-job-pin.is-active {
+  transform: scale(1.4);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 5px rgb(17 24 39 / 0.18);
+}
+
+.map-job-tooltip {
+  border: 1px solid rgb(17 24 39 / 0.1);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgb(17 24 39 / 0.1);
+  color: var(--color-ink-primary);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.leaflet-control-attribution {
+  color: rgb(17 24 39 / 0.7);
+  font-size: 11px;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-ink-primary);
+}
+
+.leaflet-bar a {
+  color: var(--color-ink-primary);
+}
