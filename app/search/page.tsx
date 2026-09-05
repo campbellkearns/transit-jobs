@@ -50,7 +50,11 @@ async function SearchResults({ filters }: { filters: SearchFilters }) {
   }
 
   const publishedCount = await countPublishedJobs()
-  return publishedCount === 0 ? <PlatformEmpty /> : <NoMatches filters={filters} />
+  return (
+    <div className="mx-auto w-full max-w-5xl">
+      {publishedCount === 0 ? <PlatformEmpty /> : <NoMatches filters={filters} />}
+    </div>
+  )
 }
 
 type SearchPageProps = {
@@ -61,27 +65,45 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const filters = parseSearchFilters(await searchParams)
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl pb-16">
-      <header className="px-4 pt-10 pb-5 sm:px-6">
-        <p className="text-sm uppercase tracking-wide text-ink-primary/60">
-          Transit to Work
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-ink-primary">
-          Jobs within walking distance of MARTA rail
-        </h1>
-      </header>
+    <main className="min-h-screen pb-16 md:flex md:h-dvh md:flex-col md:overflow-hidden md:pb-0">
+      <div className="mx-auto w-full max-w-5xl">
+        <header className="px-4 pt-10 pb-5 sm:px-6">
+          <p className="text-sm uppercase tracking-wide text-ink-primary/60">
+            Transit to Work
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold text-ink-primary">
+            Jobs within walking distance of MARTA rail
+          </h1>
+        </header>
 
-      <FilterBar filters={filters} />
+        <FilterBar filters={filters} />
+      </div>
 
       {/*
-        Keyed on the query string so a new search remounts the boundary and
-        shows skeleton rows again. Without the key, React would keep the
-        previous results on screen during the next query — the seeker would
-        read a stale list as the answer to the filter they just changed.
+        Desktop is map-as-page (Brandon's 2026-09-04 rework): the header and
+        filter bar hold their height and this region takes the rest of the
+        viewport, so the page itself does not scroll — SearchWorkspace fills
+        it with a full-bleed map canvas and a floating results rail. Below
+        md the page flows and scrolls exactly as before.
       */}
-      <Suspense key={toSearchParams(filters).toString()} fallback={<ResultsSkeleton />}>
-        <SearchResults filters={filters} />
-      </Suspense>
+      <div className="md:min-h-0 md:flex-1">
+        {/*
+          Keyed on the query string so a new search remounts the boundary and
+          shows skeleton rows again. Without the key, React would keep the
+          previous results on screen during the next query — the seeker would
+          read a stale list as the answer to the filter they just changed.
+        */}
+        <Suspense
+          key={toSearchParams(filters).toString()}
+          fallback={
+            <div className="mx-auto w-full max-w-5xl">
+              <ResultsSkeleton />
+            </div>
+          }
+        >
+          <SearchResults filters={filters} />
+        </Suspense>
+      </div>
     </main>
   )
 }

@@ -1,5 +1,6 @@
 import type { JobDetail } from "@/lib/jobs/getJobDetail"
 import { formatSalaryRange } from "@/lib/jobs/formatSalary"
+import { JobDetailMap } from "./JobDetailMap"
 import { JobRow } from "./JobRow"
 import { StationChip } from "./StationChip"
 import { WalkEstimate } from "./WalkEstimate"
@@ -27,6 +28,14 @@ export function JobDetailView({ job }: { job: JobDetail }) {
         salaryLabel={salaryLabel}
         stations={job.stations}
       />
+
+      {/*
+        The selected job's map: its pin in the active state, its stations for
+        context, fitted on the pin (Brandon's preview feedback). Above the
+        role text so the page reads location-first, mirroring the search
+        page's map-plus-list interaction.
+      */}
+      <JobDetailMap job={job} />
 
       <section aria-labelledby="job-description-heading" className="flex flex-col gap-3">
         <h2

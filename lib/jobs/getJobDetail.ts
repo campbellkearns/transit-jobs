@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm"
 import { getDb } from "@/db"
 import { companies, jobStations, jobs, stations, type MartaLine } from "@/db/schema"
 import { walkEstimateMiles } from "@/lib/geo/distance"
+import type { LngLat } from "@/db/postgis"
 import { isJobVisibleTo } from "./visibility"
 import type { JobStationSummary, JobStatus } from "./types"
 
@@ -17,6 +18,8 @@ export type JobDetail = {
   addressText: string
   applyUrl: string | null
   status: JobStatus
+  /** The job's real pin — the detail page's focused map centers on it. */
+  location: LngLat
   company: {
     name: string
     websiteUrl: string | null
@@ -89,6 +92,7 @@ export async function getJobDetail(
       // (db/schema.ts) — stored as a plain text array because a new line is
       // a data change, not a migration.
       lines: station.lines as MartaLine[],
+      location: station.location,
       walkMiles: walkEstimateMiles(job.location, station.location),
     }))
     .sort((a, b) => a.walkMiles - b.walkMiles)
@@ -104,6 +108,7 @@ export async function getJobDetail(
     addressText: job.addressText,
     applyUrl: job.applyUrl,
     status: job.status,
+    location: job.location,
     company: {
       name: job.companyName,
       websiteUrl: job.companyWebsiteUrl,
