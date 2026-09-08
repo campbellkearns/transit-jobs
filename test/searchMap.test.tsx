@@ -71,11 +71,35 @@ vi.mock("react-leaflet", () => {
     return <div data-testid="map-tooltip">{children}</div>
   }
 
+  /**
+   * The leader line's stub: what it renders is exactly the geometry and
+   * pathOptions the overlay derived from the shared sync, surfaced as data
+   * attributes the tests can read.
+   */
+  function Polyline({
+    positions,
+    pathOptions,
+    interactive,
+  }: {
+    positions?: [number, number][]
+    pathOptions?: { dashArray?: string }
+    interactive?: boolean
+  }) {
+    return (
+      <div
+        data-testid="map-leader-line"
+        data-positions={positions?.map((point) => point.join(",")).join(" | ") ?? ""}
+        data-dash-array={pathOptions?.dashArray ?? ""}
+        data-interactive={String(Boolean(interactive))}
+      />
+    )
+  }
+
   function useMap() {
     return { fitBounds: fitBoundsSpy }
   }
 
-  return { MapContainer, ZoomControl, TileLayer, Marker, Tooltip, useMap }
+  return { MapContainer, ZoomControl, TileLayer, Marker, Tooltip, Polyline, useMap }
 })
 
 function makeStation(overrides: Partial<SearchResultStation> = {}): SearchResultStation {
@@ -391,5 +415,107 @@ describe("MapPanel focused mode (job detail page)", () => {
     expect(bounds.contains([33.75, -84.4])).toBe(true)
     expect(bounds.contains([33.755, -84.39])).toBe(true)
     expect(bounds.contains([33.77, -84.29])).toBe(true)
+  })
+})
+
+describe("SearchWorkspace leader line (active-only, art_HltyfOl7)", () => {
+  function firstJobPin() {
+    const pin = screen
+      .getAllByTestId("map-marker")
+      .find((marker) => (marker.getAttribute("data-icon-html") ?? "").includes("map-job-pin"))
+    if (!pin) throw new Error("job pin not rendered")
+    return pin
+  }
+
+  it("draws nothing while no job is active — the line is never always-on", async () => {
+    renderWorkspace()
+    await screen.findByTestId("map-container")
+
+    expect(screen.queryByTestId("map-leader-line")).not.toBeInTheDocument()
+  })
+
+  it("rests dashed while the activation rides in from the rail, and cleans up on deactivation", async () => {
+    renderWorkspace()
+    await screen.findByTestId("map-container")
+
+    // Hovering a rail row activates the job through the shared sync with the
+    // pointer nowhere near the pin — the line's resting state is dashed.
+    const row = screen.getByRole("link", { name: /warehouse lead/i })
+    fireEvent.mouseEnter(row)
+
+    const lines = screen.getAllByTestId("map-leader-line")
+    const line = lines[0]
+    if (!line) throw new Error("leader line not rendered")
+    expect(lines).toHaveLength(1)
+    expect(line.getAttribute("data-dash-array")).toBe("3 6")
+    // Geometry: the pin tip (the job location) to the station the row groups
+    // under — the query's serving station, not whichever station is nearest
+    // the overlay's convenience.
+    expect(line.getAttribute("data-positions")).toBe("33.75,-84.4 | 33.755,-84.39")
+    // Non-interactive: the line must not intercept pin hover or map drag.
+    expect(line.getAttribute("data-interactive")).toBe("false")
+
+    // Leaving the row deactivates the job — the line is removed outright,
+    // not faded or left behind (the deactivation cleanup).
+    fireEvent.mouseLeave(row)
+    expect(screen.queryByTestId("map-leader-line")).not.toBeInTheDocument()
+  })
+
+  it("solidifies when the pointer moves onto the active pin itself", async () => {
+    renderWorkspace()
+    await screen.findByTestId("map-container")
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: /warehouse lead/i }))
+    fireEvent.mouseEnter(firstJobPin())
+
+    const line = screen.getAllByTestId("map-leader-line")[0]
+    if (!line) throw new Error("leader line not rendered")
+    expect(line.getAttribute("data-dash-array")).toBe("")
+  })
+
+  it("removes the line when the pointer leaves the pin", async () => {
+    renderWorkspace()
+    await screen.findByTestId("map-container")
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: /warehouse lead/i }))
+    fireEvent.mouseEnter(firstJobPin())
+    fireEvent.mouseLeave(firstJobPin())
+
+    expect(screen.queryByTestId("map-leader-line")).not.toBeInTheDocument()
+  })
+})
+
+describe("MapPanel leader line", () => {
+  it("draws dashed for a prop-driven activeJobId with the pointer off the pin", async () => {
+    render(
+      <MapPanel
+        results={RESULTS}
+        stations={STATIONS}
+        activeJobId={FIRST_RESULT.id}
+        onActiveJobChange={vi.fn()}
+      />,
+    )
+    await screen.findByTestId("map-container")
+
+    const line = screen.getByTestId("map-leader-line")
+    expect(line.getAttribute("data-dash-array")).toBe("3 6")
+    expect(line.getAttribute("data-positions")).toBe("33.75,-84.4 | 33.755,-84.39")
+  })
+
+  it("never draws in focused mode — the detail page has no activeJobId sync", async () => {
+    render(
+      <MapPanel
+        stations={STATIONS}
+        focusedJob={{
+          id: FIRST_RESULT.id,
+          title: FIRST_RESULT.title,
+          companyName: FIRST_RESULT.companyName,
+          location: FIRST_RESULT.location,
+        }}
+      />,
+    )
+    await screen.findByTestId("map-container")
+
+    expect(screen.queryByTestId("map-leader-line")).not.toBeInTheDocument()
   })
 })
