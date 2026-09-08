@@ -114,3 +114,30 @@ export function PlatformEmpty() {
     </div>
   )
 }
+
+/**
+ * The search itself failed: the database could not be reached, or its schema
+ * is not in place yet (a fresh deployment before `db:setup`). This is a third
+ * fact about the world, distinct from the two above — not "your filters are
+ * too narrow", not "nobody has posted yet", but "the board is down". Bordered
+ * and centered like PlatformEmpty (the only recovery is retrying, not
+ * widening), but with failure copy rather than emptiness copy.
+ */
+export function SearchUnavailable() {
+  return (
+    <div className="mx-4 my-10 rounded-md border border-ink-primary/15 bg-white px-6 py-12 text-center sm:mx-6">
+      <h2 className="text-base font-semibold text-ink-primary">
+        Search is unavailable right now
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm text-ink-primary/70">
+        We could not load jobs just now. This is usually temporary — try again
+        in a moment.
+      </p>
+      <p className="mt-4 text-sm">
+        <Link href="/search" className="underline underline-offset-2">
+          Try again
+        </Link>
+      </p>
+    </div>
+  )
+}

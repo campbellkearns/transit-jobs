@@ -2,7 +2,7 @@ import { Suspense } from "react"
 import type { Metadata } from "next"
 
 import { FilterBar } from "@/components/search/FilterBar"
-import { NoMatches, PlatformEmpty } from "@/components/search/EmptyStates"
+import { NoMatches, PlatformEmpty, SearchUnavailable } from "@/components/search/EmptyStates"
 import { ResultsSkeleton } from "@/components/search/ResultsSkeleton"
 import { SearchWorkspace } from "@/components/search/SearchWorkspace"
 import {
@@ -11,7 +11,13 @@ import {
   type RawSearchParams,
   type SearchFilters,
 } from "@/lib/search/filters"
-import { countPublishedJobs, listStations, searchJobs } from "@/lib/search/query"
+import {
+  countPublishedJobs,
+  listStations,
+  searchJobs,
+  type SearchResult,
+  type SearchResultStation,
+} from "@/lib/search/query"
 
 export const metadata: Metadata = {
   title: "Search jobs · Transit to Work",
@@ -32,29 +38,66 @@ export const metadata: Metadata = {
  * different recovery — and paying for the count on every successful search
  * would buy nothing.
  */
-async function SearchResults({ filters }: { filters: SearchFilters }) {
-  const results = await searchJobs(filters)
+/**
+ * Classifies the search outcome before any JSX is built: data fetching runs
+ * inside one guard, and the render switch happens outside it. Separating the
+ * two keeps `react-hooks/error-boundaries` honest — a try/catch around JSX
+ * cannot catch render errors, only these awaits can fail here.
+ */
+type SearchOutcome =
+  | { state: "results"; results: SearchResult[]; stations: SearchResultStation[] }
+  | { state: "no-matches"; publishedCount: number }
+  | { state: "unavailable" }
 
-  if (results.length > 0) {
-    // Stations are fetched only when there is something to plot beside —
-    // the empty states own the whole viewport, and a map adds nothing to
-    // "no jobs posted yet" that the recovery copy does not.
-    const stations = await listStations()
-    return (
-      <SearchWorkspace
-        results={results}
-        stations={stations}
-        radiusMiles={filters.radiusMiles}
-      />
-    )
+async function runSearch(filters: SearchFilters): Promise<SearchOutcome> {
+  try {
+    const results = await searchJobs(filters)
+
+    if (results.length > 0) {
+      // Stations are fetched only when there is something to plot beside —
+      // the empty states own the whole viewport, and a map adds nothing to
+      // "no jobs posted yet" that the recovery copy does not.
+      const stations = await listStations()
+      return { state: "results", results, stations }
+    }
+
+    return { state: "no-matches", publishedCount: await countPublishedJobs() }
+  } catch (error) {
+    // The database is unreachable, or its schema is not in place yet (a fresh
+    // deployment before `db:setup`). Left uncaught, the throw fails the server
+    // render, hydration crashes with React error #441, and the seeker sees a
+    // cryptic framework page. An outage is a state this page owns: keep the
+    // header and filter bar, and name the failure plainly.
+    console.error("Search results unavailable:", error)
+    return { state: "unavailable" }
   }
+}
 
-  const publishedCount = await countPublishedJobs()
-  return (
-    <div className="mx-auto w-full max-w-5xl">
-      {publishedCount === 0 ? <PlatformEmpty /> : <NoMatches filters={filters} />}
-    </div>
-  )
+async function SearchResults({ filters }: { filters: SearchFilters }) {
+  const outcome = await runSearch(filters)
+
+  switch (outcome.state) {
+    case "results":
+      return (
+        <SearchWorkspace
+          results={outcome.results}
+          stations={outcome.stations}
+          radiusMiles={filters.radiusMiles}
+        />
+      )
+    case "no-matches":
+      return (
+        <div className="mx-auto w-full max-w-5xl">
+          {outcome.publishedCount === 0 ? <PlatformEmpty /> : <NoMatches filters={filters} />}
+        </div>
+      )
+    case "unavailable":
+      return (
+        <div className="mx-auto w-full max-w-5xl">
+          <SearchUnavailable />
+        </div>
+      )
+  }
 }
 
 type SearchPageProps = {
