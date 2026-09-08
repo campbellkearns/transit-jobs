@@ -6,7 +6,7 @@ import { JobRow } from "@/components/search/JobRow"
 import { ResultsList } from "@/components/search/ResultsList"
 import { ResultsSkeleton } from "@/components/search/ResultsSkeleton"
 import { DEFAULT_FILTERS, parseSearchFilters } from "@/lib/search/filters"
-import type { SearchResult } from "@/lib/search/query"
+import type { SearchResult, SearchResultStation } from "@/lib/search/query"
 
 function makeResult(overrides: Partial<SearchResult> = {}): SearchResult {
   return {
@@ -32,7 +32,7 @@ function makeResult(overrides: Partial<SearchResult> = {}): SearchResult {
 }
 
 describe("JobRow", () => {
-  it("renders the row grammar: role, company, salary, station, walk", () => {
+  it("renders the slim row grammar: role, company, salary, walk", () => {
     render(
       <ul>
         <JobRow job={makeResult()} />
@@ -42,9 +42,42 @@ describe("JobRow", () => {
     expect(screen.getByRole("heading", { name: "Warehouse Lead" })).toBeInTheDocument()
     expect(screen.getByText("Northstar Logistics")).toBeInTheDocument()
     expect(screen.getByText("$38,000 – $45,000")).toBeInTheDocument()
-    expect(screen.getByText("Five Points")).toBeInTheDocument()
-    expect(screen.getByText("BLUE")).toBeInTheDocument()
-    expect(screen.getByText("RED")).toBeInTheDocument()
+    expect(screen.getByText("≈ 0.75 mi walk")).toBeInTheDocument()
+  })
+
+  it("leaves the station to the section header above the row", () => {
+    render(
+      <ul>
+        <JobRow job={makeResult()} />
+      </ul>,
+    )
+
+    // The station is the list's structure now, not row metadata.
+    expect(screen.queryByText("Five Points")).not.toBeInTheDocument()
+    expect(screen.queryByText("BLUE")).not.toBeInTheDocument()
+    expect(screen.queryByText("RED")).not.toBeInTheDocument()
+  })
+
+  it("names its station again when it stands outside every group", () => {
+    render(
+      <ul>
+        <JobRow
+          job={makeResult({
+            station: {
+              stopId: "LENOX",
+              name: "LENOX STATION",
+              lines: ["RED", "GOLD"],
+              location: { lng: -84.3517, lat: 33.8424 },
+            },
+          })}
+          showStation
+        />
+      </ul>,
+    )
+
+    // Same naming convention as the map labels: the GTFS " STATION" suffix
+    // drops, and the name is what the row is organized under.
+    expect(screen.getByText("LENOX")).toBeInTheDocument()
   })
 
   it("marks the walk figure as an estimate", () => {
@@ -89,7 +122,7 @@ describe("ResultsList", () => {
 
     const status = screen.getByRole("status")
     expect(status).toHaveTextContent("2 jobs within 1 mile of a MARTA rail station")
-    expect(status).toHaveTextContent("closest walk first")
+    expect(status).toHaveTextContent("grouped by closest station")
   })
 
   it("uses the singular for one result", () => {
@@ -97,6 +130,90 @@ describe("ResultsList", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "1 job within 2 miles of a MARTA rail station",
     )
+  })
+
+  it("heads the station section with its name, line dots, and count", () => {
+    render(
+      <ResultsList
+        results={[
+          makeResult(),
+          makeResult({ id: "22222222-2222-2222-2222-222222222222" }),
+        ]}
+        radiusMiles={1}
+      />,
+    )
+
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Five Points" }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("img", { name: "BLUE, RED lines" })).toBeInTheDocument()
+    expect(screen.getByText("2 jobs")).toBeInTheDocument()
+  })
+
+  it("folds single-job stations into a more-stations tail that names them", () => {
+    render(
+      <ResultsList
+        results={[
+          makeResult(),
+          makeResult({ id: "22222222-2222-2222-2222-222222222222" }),
+          makeResult({
+            id: "33333333-3333-3333-3333-333333333333",
+            station: {
+              stopId: "MIDTOWN",
+              name: "MIDTOWN STATION",
+              lines: ["RED", "GOLD"],
+              location: { lng: -84.388, lat: 33.7829 },
+            },
+          }),
+        ]}
+        radiusMiles={1}
+      />,
+    )
+
+    // Two jobs sit under Five Points; the lone Midtown job cannot carry a
+    // section, so the tail catches it — with its station on the row.
+    expect(screen.getAllByRole("link")).toHaveLength(3)
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Five Points" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { level: 3, name: "More stations" }),
+    ).toBeInTheDocument()
+    expect(screen.getByText("MIDTOWN")).toBeInTheDocument()
+  })
+
+  it("gives each station its own section when both are dense", () => {
+    const midtownStation: SearchResultStation = {
+      stopId: "MIDTOWN",
+      name: "MIDTOWN STATION",
+      lines: ["RED", "GOLD"],
+      location: { lng: -84.388, lat: 33.7829 },
+    }
+    render(
+      <ResultsList
+        results={[
+          makeResult(),
+          makeResult({ id: "22222222-2222-2222-2222-222222222222" }),
+          makeResult({
+            id: "33333333-3333-3333-3333-333333333333",
+            station: midtownStation,
+          }),
+          makeResult({
+            id: "44444444-4444-4444-4444-444444444444",
+            station: midtownStation,
+          }),
+        ]}
+        radiusMiles={1}
+      />,
+    )
+
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Five Points" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { level: 3, name: "MIDTOWN" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("More stations")).not.toBeInTheDocument()
   })
 })
 
