@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css"
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { divIcon, latLngBounds } from "leaflet"
 import { MapContainer, Marker, TileLayer, Tooltip, ZoomControl, useMap } from "react-leaflet"
 
@@ -19,6 +19,8 @@ import {
   stationMarkerHtml,
 } from "@/lib/search/mapMarkers"
 import type { SearchResult, SearchResultStation } from "@/lib/search/query"
+
+import { LeaderLineOverlay } from "./LeaderLineOverlay"
 
 /**
  * OSM raster tiles. The attribution contract is fixed by spec deliverable 6:
@@ -166,7 +168,10 @@ type MapPanelProps = {
  *   marker and each job result as an ink pin at its real location. The
  *   results float over it as a rail; hovering either the rail's rows or the
  *   pins highlights the matching pin/row via `activeJobId` — the same
- *   nearest-station geography the list is sorted by. The wheel zooms (the
+ *   nearest-station geography the list is sorted by. While a job is active,
+ *   an isolated leader-line overlay connects its pin to the station its row
+ *   groups under (see `LeaderLineOverlay`) — the feature's only surface.
+ *   The wheel zooms (the
  *   map is the page; see `scrollWheelZoom`), and the fit keeps the rail's
  *   width clear so labels stay readable (see `fitPaddingLeft`).
  * - Focused (`focusedJob`, job detail page): one always-active pin for the
@@ -187,6 +192,14 @@ export default function MapPanel({
   fitPaddingLeft,
   fullBleed = false,
 }: MapPanelProps) {
+  // The pointer's presence on the active pin itself is the one distinction
+  // the shared activeJobId cannot carry: the rail's sync sets activeJobId
+  // from afar (the leader line rests dashed), while a pin hover means direct
+  // engagement (the line solidifies). Reset by the same handlers that drive
+  // the sync, so the two can never disagree about which pin is under the
+  // pointer.
+  const [pointerOverPinId, setPointerOverPinId] = useState<string | null>(null)
+
   // Memoized so the fit effect sees stable deps — an inline array would
   // re-fit the viewport after every render.
   const fitPositions = useMemo<[number, number][]>(() => {
@@ -231,6 +244,19 @@ export default function MapPanel({
           maxZoom={focusedJob ? FOCUSED_FIT_MAX_ZOOM : SEARCH_FIT_MAX_ZOOM}
           paddingLeft={railPadding}
         />
+
+        {/*
+          The active job's leader line (art_HltyfOl7 locked decision) — a
+          search-mode feature only: focused mode has no activeJobId sync, and
+          with nothing active the overlay renders nothing.
+        */}
+        {!focusedJob && (
+          <LeaderLineOverlay
+            results={results}
+            activeJobId={activeJobId}
+            pointerOnActivePin={pointerOverPinId !== null && pointerOverPinId === activeJobId}
+          />
+        )}
 
         {stations.map((station) => {
           const { size, anchor } = stationIconBox(station.lines.length)
@@ -282,8 +308,14 @@ export default function MapPanel({
                 iconAnchor: JOB_PIN_BOX.anchor,
               })}
               eventHandlers={{
-                mouseover: () => onActiveJobChange?.(job.id),
-                mouseout: () => onActiveJobChange?.(null),
+                mouseover: () => {
+                  onActiveJobChange?.(job.id)
+                  setPointerOverPinId(job.id)
+                },
+                mouseout: () => {
+                  onActiveJobChange?.(null)
+                  setPointerOverPinId(null)
+                },
                 click: () => onActiveJobChange?.(job.id),
               }}
             >
