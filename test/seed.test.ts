@@ -267,6 +267,13 @@ describe.skipIf(!hasDatabase)("employer and job content seed", () => {
     await client.end()
   })
 
+  // The fixture seed (11 employers, 24 jobs, 24 station associations with
+  // PostGIS round-trips) runs against a shared Postgres container while other
+  // test files run in parallel — on CI's slower runners that has measured just
+  // over Vitest's default 5s budget. An aborted seed doesn't cancel its async
+  // work either: it kept committing mid-flight and corrupted the tests below
+  // it in this block (0 associations, company counts off by one). Give every
+  // test that invokes seedEmployersAndJobs an explicit budget instead.
   it("publishes at least 20 jobs across at least 8 stations and all 4 lines", async () => {
     const result = await seedEmployersAndJobs(db)
     expect(result.jobCount).toBeGreaterThanOrEqual(20)
@@ -286,7 +293,7 @@ describe.skipIf(!hasDatabase)("employer and job content seed", () => {
     for (const line of MARTA_LINES) {
       expect(coveredLines).toContain(line)
     }
-  })
+  }, 20_000)
 
   it("uses no real company names", async () => {
     const companyRows = await db.select({ name: companies.name }).from(companies)
@@ -346,5 +353,5 @@ describe.skipIf(!hasDatabase)("employer and job content seed", () => {
     expect(afterAssociations.length).toBe(beforeAssociations.length)
     expect(afterCompanies.map((row) => row.id)).toEqual(beforeCompanies.map((row) => row.id))
     expect(afterJobs.map((row) => row.id)).toEqual(beforeJobs.map((row) => row.id))
-  })
+  }, 20_000)
 })
