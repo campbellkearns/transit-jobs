@@ -6,7 +6,18 @@ import { useEffect, useMemo } from "react"
 import { divIcon, latLngBounds } from "leaflet"
 import { MapContainer, Marker, TileLayer, Tooltip, ZoomControl, useMap } from "react-leaflet"
 
-import { jobPinHtml, stationMarkerHtml } from "@/lib/search/mapMarkers"
+/**
+ * Icon boxes and anchors come from the marker builders' module, where the
+ * emitted markup lives — the teardrop's anchor is its ink tip (the point sits
+ * on the job location) and a station's badge cascade is centered on the
+ * station, so the numbers must match the HTML they position.
+ */
+import {
+  JOB_PIN_BOX,
+  jobPinHtml,
+  stationIconBox,
+  stationMarkerHtml,
+} from "@/lib/search/mapMarkers"
 import type { SearchResult, SearchResultStation } from "@/lib/search/query"
 
 /**
@@ -19,11 +30,11 @@ const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors &middot; map data <a href="https://opendatacommons.org/licenses/odbl/" target="_blank" rel="noopener noreferrer">ODbL</a>'
 
-/** Dot box only — the name label overflows to the right, on purpose. */
-const STATION_ICON_SIZE: [number, number] = [12, 12]
-const STATION_ICON_ANCHOR: [number, number] = [6, 6]
-const JOB_ICON_SIZE: [number, number] = [12, 12]
-const JOB_ICON_ANCHOR: [number, number] = [6, 6]
+/**
+ * Tooltip clears the pin head (20px of teardrop above the anchored tip) with
+ * a two-pixel gap — the old −8 was sized for a 12px dot.
+ */
+const JOB_TOOLTIP_OFFSET: [number, number] = [0, -22]
 
 /** Fallback center (downtown Atlanta) for the instant before fitting. */
 const FALLBACK_CENTER: [number, number] = [33.749, -84.388]
@@ -221,19 +232,22 @@ export default function MapPanel({
           paddingLeft={railPadding}
         />
 
-        {stations.map((station) => (
-          <Marker
-            key={station.stopId}
-            position={[station.location.lat, station.location.lng]}
-            interactive={false}
-            icon={divIcon({
-              className: "map-station-icon",
-              html: stationMarkerHtml(station),
-              iconSize: STATION_ICON_SIZE,
-              iconAnchor: STATION_ICON_ANCHOR,
-            })}
-          />
-        ))}
+        {stations.map((station) => {
+          const { size, anchor } = stationIconBox(station.lines.length)
+          return (
+            <Marker
+              key={station.stopId}
+              position={[station.location.lat, station.location.lng]}
+              interactive={false}
+              icon={divIcon({
+                className: "map-station-icon",
+                html: stationMarkerHtml(station),
+                iconSize: size,
+                iconAnchor: anchor,
+              })}
+            />
+          )
+        })}
 
         {focusedJob ? (
           <Marker
@@ -243,11 +257,11 @@ export default function MapPanel({
             icon={divIcon({
               className: "map-job-icon",
               html: jobPinHtml(true),
-              iconSize: JOB_ICON_SIZE,
-              iconAnchor: JOB_ICON_ANCHOR,
+              iconSize: JOB_PIN_BOX.size,
+              iconAnchor: JOB_PIN_BOX.anchor,
             })}
           >
-            <Tooltip direction="top" offset={[0, -8]} className="map-job-tooltip">
+            <Tooltip direction="top" offset={JOB_TOOLTIP_OFFSET} className="map-job-tooltip">
               <strong className="font-semibold text-ink-primary">{focusedJob.title}</strong>
               {" · "}
               {focusedJob.companyName}
@@ -264,8 +278,8 @@ export default function MapPanel({
               icon={divIcon({
                 className: "map-job-icon",
                 html: jobPinHtml(isActive),
-                iconSize: JOB_ICON_SIZE,
-                iconAnchor: JOB_ICON_ANCHOR,
+                iconSize: JOB_PIN_BOX.size,
+                iconAnchor: JOB_PIN_BOX.anchor,
               })}
               eventHandlers={{
                 mouseover: () => onActiveJobChange?.(job.id),
@@ -273,7 +287,7 @@ export default function MapPanel({
                 click: () => onActiveJobChange?.(job.id),
               }}
             >
-              <Tooltip direction="top" offset={[0, -8]} className="map-job-tooltip">
+              <Tooltip direction="top" offset={JOB_TOOLTIP_OFFSET} className="map-job-tooltip">
                 <strong className="font-semibold text-ink-primary">{job.title}</strong>
                 {" · "}
                 {job.companyName}
