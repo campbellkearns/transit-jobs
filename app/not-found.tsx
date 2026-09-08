@@ -2,10 +2,10 @@ import Link from "next/link"
 
 /**
  * Branded 404 for `notFound()` calls (missing or draft jobs, unknown routes).
- * The draft-404 contract in e2e asserts the response status only, so the copy
- * is free to be helpful: name the two likely causes and offer the two main
- * doors. A stranger who followed a dead link should not land on the browser's
- * idea of a dead end.
+ * The draft-404 contract in e2e asserts the 404 status and this page's
+ * heading, so the copy is free to be helpful: name the two likely causes and
+ * offer the two main doors. A stranger who followed a dead link should not
+ * land on the browser's idea of a dead end.
  */
 export default function NotFound() {
   return (

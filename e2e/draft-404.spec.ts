@@ -33,10 +33,11 @@ test("a draft job is visible only to its owner and 404s for everyone else", asyn
 
   const draftResponse = await strangerPage.goto(`/jobs/${jobId}`)
   expect(draftResponse?.status()).toBe(404)
-  await expect(strangerPage.getByText("This page could not be found.")).toBeVisible()
+  await expect(strangerPage.getByRole("heading", { name: "Page not found" })).toBeVisible()
 
   const fakeResponse = await strangerPage.goto("/jobs/11111111-1111-4111-8111-111111111111")
   expect(fakeResponse?.status()).toBe(404)
+  await expect(strangerPage.getByRole("heading", { name: "Page not found" })).toBeVisible()
 
   await stranger.close()
 })
