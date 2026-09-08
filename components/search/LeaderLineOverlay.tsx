@@ -44,6 +44,7 @@ export function LeaderLineOverlay({
 
   return (
     <Polyline
+      key={pointerOnActivePin ? "active" : "idle"}
       positions={positions}
       pathOptions={leaderLineOptions(pointerOnActivePin ? "active" : "idle")}
       interactive={false}

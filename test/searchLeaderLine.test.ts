@@ -100,6 +100,8 @@ describe("leaderLineOptions", () => {
   })
 
   it("solidifies on direct engagement — no dash array", () => {
+    // The overlay remounts the polyline per state (a key), so the solid
+    // state's options are constructor-exact: no dash to clear.
     const options = leaderLineOptions("active")
     expect(options.dashArray).toBeUndefined()
   })

@@ -32,7 +32,12 @@ export type LeaderLineOptions = {
   color: string
   weight: number
   opacity: number
-  /** Leaflet dashArray; absent = solid. */
+  /**
+   * Leaflet dashArray; absent = solid. The overlay remounts the polyline per
+   * state (a `key` on the Polyline) rather than updating pathOptions in
+   * place: react-leaflet applies updates through Leaflet's setStyle, which
+   * MERGES options — an absent key could never clear a drawn dash.
+   */
   dashArray?: string
 }
 
