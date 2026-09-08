@@ -37,18 +37,38 @@ body {
   white-space: nowrap;
 }
 
-.map-station-dots {
+/*
+ * Station line badges (art_HltyfOl7, decision A): a rounded square per
+ * serving line — shape, not just hue, separates stations from job pins.
+ * Later badges in a cascade overlap the previous one's right edge, leaving
+ * STATION_BADGE_STEP (7px, lib/search/mapMarkers) visible per line.
+ */
+.map-station-badges {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
   flex: none;
 }
 
-.map-station-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 9999px;
+.map-station-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgb(17 24 39 / 0.35);
   box-shadow: 0 0 0 1.5px #fff;
+}
+
+/* Pull each following badge back over the previous one's ring. */
+.map-station-badge + .map-station-badge {
+  margin-left: -9px;
+}
+
+.map-station-badge-m {
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .map-station-name {
@@ -61,27 +81,25 @@ body {
   box-shadow: 0 1px 2px rgb(17 24 39 / 0.15);
 }
 
+/*
+ * Job pins are inline SVG teardrops (lib/search/mapMarkers): 12px ink head,
+ * short tail, white ring drawn as a stroke under the fill. The tip sits on
+ * the job location, so the active scale grows from the tip — scaling about
+ * the box center would slide the point off its location.
+ */
 .map-job-pin {
   display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: 9999px;
-  background: var(--color-ink-primary);
-  box-shadow:
-    0 0 0 2px #fff,
-    0 1px 3px rgb(17 24 39 / 0.35);
+  transform-origin: 8px 20px;
   transition:
     transform 120ms ease,
-    box-shadow 120ms ease;
+    filter 120ms ease;
 }
 
 /* The active pin — hovered on the map, or its row hovered in the list — is
  * ink-highlighted, never hue-highlighted: chroma on the map means rail lines. */
 .map-job-pin.is-active {
   transform: scale(1.4);
-  box-shadow:
-    0 0 0 2px #fff,
-    0 0 0 5px rgb(17 24 39 / 0.18);
+  filter: drop-shadow(0 0 4px rgb(17 24 39 / 0.4));
 }
 
 .map-job-tooltip {
