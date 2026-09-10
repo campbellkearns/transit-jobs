@@ -46,9 +46,13 @@ export type LeaderLineOptions = {
  * (mapMarkers' LINE_MARKER_COLORS), so the leader line may not borrow it.
  */
 export function leaderLineOptions(state: LeaderLineState): LeaderLineOptions {
+  // 2px / 0.85: the 1.5px / 0.55 idle line shipped for evaluation (PR #15)
+  // measured faint against OSM street detail at cluster zoom — the weight and
+  // opacity step up (Brandon, 2026-09-09) so the dash still reads at rest
+  // while remaining a hair under the active state's 0.9.
   return state === "active"
     ? { color: INK, weight: 2, opacity: 0.9 }
-    : { color: INK, weight: 1.5, opacity: 0.55, dashArray: "3 6" }
+    : { color: INK, weight: 2, opacity: 0.85, dashArray: "3 6" }
 }
 
 /**
