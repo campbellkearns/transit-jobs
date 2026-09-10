@@ -94,21 +94,29 @@ describe("activeLeaderJob", () => {
 })
 
 describe("leaderLineOptions", () => {
-  it("rests dashed while idle", () => {
-    const options = leaderLineOptions("idle")
-    expect(options.dashArray).toBeTruthy()
+  it("rests dashed at the legibility restyle — 2px / 0.85 (PR #15's 1.5px / 0.55 did not read against OSM detail)", () => {
+    // Exact pin: the idle restyle is a measured decision (Brandon,
+    // 2026-09-09) — these literals are the acceptance criteria, and the pin
+    // keeps the active state's values from drifting into the idle branch.
+    expect(leaderLineOptions("idle")).toEqual({
+      color: "#111827",
+      weight: 2,
+      opacity: 0.85,
+      dashArray: "3 6",
+    })
   })
 
-  it("solidifies on direct engagement — no dash array", () => {
+  it("solidifies on direct engagement — exact active options, unchanged by the idle restyle", () => {
     // The overlay remounts the polyline per state (a key), so the solid
-    // state's options are constructor-exact: no dash to clear.
-    const options = leaderLineOptions("active")
-    expect(options.dashArray).toBeUndefined()
-  })
-
-  it("stays thin in both states", () => {
-    expect(leaderLineOptions("idle").weight).toBeLessThanOrEqual(2)
-    expect(leaderLineOptions("active").weight).toBeLessThanOrEqual(2)
+    // state's options are constructor-exact: no dash to clear. Pinned exact
+    // because the idle restyle must not touch this state — the previous
+    // per-property weight check is subsumed by this pin.
+    expect(leaderLineOptions("active")).toEqual({
+      color: "#111827",
+      weight: 2,
+      opacity: 0.9,
+      dashArray: undefined,
+    })
   })
 
   it("is ink in both states — never a line hue (chroma means rail lines)", () => {
